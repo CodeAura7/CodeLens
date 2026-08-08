@@ -66,6 +66,7 @@ def analyze(payload: AnalysisRequest, credentials: HTTPAuthorizationCredentials 
     try:
         result = build_analysis_payload(payload)
     except Exception as exc:
+        print("GEMINI ERROR:", repr(exc))
         raise HTTPException(
             status_code=502,
             detail="Unable to analyze the file right now. Please verify the Gemini API key and try again.",

@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-      axios.get('/api/profile').then((res) => setUser(res.data)).catch(() => logout());
+      axios.get('/api/auth/profile').then((res) => setUser(res.data)).catch(() => logout());
     } else {
       delete axios.defaults.headers.common.Authorization;
     }
