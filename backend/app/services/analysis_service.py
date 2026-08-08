@@ -1,62 +1,98 @@
 import json
 import os
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict
 
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
 from app.models.history import History
 from app.schemas.analysis import AnalysisRequest
 
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+try:
+    import google.generativeai as genai
+except ImportError:  # pragma: no cover - handled at runtime
+    genai = None
+
+
+def _build_prompt(payload: AnalysisRequest) -> str:
+    return f"""
+Analyze the following {payload.language} file named {payload.filename}.
+
+Return valid JSON with these keys:
+- code_summary: short summary of the code
+- step_by_step_explanation: array of strings
+- possible_bugs: array of objects with issue and severity
+- improvement_suggestions: array of strings
+- time_complexity: string
+- interview_questions: array of objects with question, answer, and difficulty
+
+Keep the response concise, practical, and suitable for a portfolio project.
+
+Code:
+{payload.content}
+"""
+
+
+def _parse_gemini_response(text: str) -> Dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+
+    parsed = json.loads(cleaned)
+    return {
+        "summary": parsed.get("code_summary") or "Analysis completed successfully.",
+        "explanation": parsed.get("step_by_step_explanation") or ["No step-by-step explanation was returned."],
+        "function_explanation": [],
+        "variable_explanation": [],
+        "data_flow": "The code flow is summarized from the Gemini analysis.",
+        "beginner_explanation": parsed.get("code_summary") or "The code was reviewed for clarity and correctness.",
+        "intermediate_explanation": parsed.get("step_by_step_explanation", ["Reviewed successfully"])[0] if parsed.get("step_by_step_explanation") else "Reviewed successfully.",
+        "senior_explanation": "The implementation was reviewed for maintainability, edge cases, and practical improvements.",
+        "complexity": {"time": parsed.get("time_complexity") or "Not applicable", "space": "O(1)"},
+        "bugs": parsed.get("possible_bugs") or [{"issue": "No obvious bugs found", "severity": "Low"}],
+        "improvements": parsed.get("improvement_suggestions") or ["Add more comments and validation."],
+        "interview_questions": parsed.get("interview_questions") or [{"question": "How would you improve this solution?", "answer": "By improving clarity, validation, and structure.", "difficulty": "Easy"}],
+        "flowchart": "graph TD\nA[Start] --> B[Process Input]\nB --> C[Apply Logic]\nC --> D[Return Result]",
+        "scores": {
+            "readability": 80,
+            "maintainability": 78,
+            "naming": 76,
+            "documentation": 70,
+            "overall": 76,
+        },
+        "code_summary": parsed.get("code_summary") or "",
+        "step_by_step_explanation": parsed.get("step_by_step_explanation") or [],
+        "possible_bugs": parsed.get("possible_bugs") or [],
+        "improvement_suggestions": parsed.get("improvement_suggestions") or [],
+        "time_complexity": parsed.get("time_complexity") or "Not applicable",
+        "interview_questions_with_answers": parsed.get("interview_questions") or [],
+    }
+
 
 def build_analysis_payload(payload: AnalysisRequest) -> Dict[str, Any]:
-    content = payload.content
-    lines = content.splitlines()
-    function_names = [line.strip() for line in lines if line.strip().startswith(("def ", "function ", "public ", "private "))]
-    variable_names = [line.strip() for line in lines if "=" in line and not line.strip().startswith(("#", "//", "/*"))]
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("Missing GEMINI_API_KEY in the environment")
 
-    summary = f"Reviewed {payload.filename} written in {payload.language}."
-    explanation = [
-        "The code appears to define core logic and data flow through a few functions and variables.",
-        "The structure is readable, but naming and documentation can be improved for maintainability.",
-    ]
-    complexity = "O(n)" if len(lines) > 0 else "Not applicable"
-    bugs = [
-        {"issue": "Possible missing edge-case handling", "severity": "Medium"},
-        {"issue": "Variable names may need clarity", "severity": "Low"},
-    ]
-    improvements = [
-        "Use clearer naming for variables and functions.",
-        "Add comments to explain non-obvious logic.",
-        "Break large functions into smaller helpers.",
-    ]
-    interview_questions = [
-        {"question": "How would you improve the readability of this code?", "answer": "Use descriptive names and small functions.", "difficulty": "Easy"},
-        {"question": "What would you check first for potential bugs?", "answer": "Review edge cases and input validation.", "difficulty": "Medium"},
-    ]
-    flowchart = "graph TD\nA[Start] --> B[Process Input]\nB --> C[Apply Logic]\nC --> D[Return Result]"
+    if genai is None:
+        raise RuntimeError("google-generativeai is not installed")
 
-    return {
-        "summary": summary,
-        "explanation": explanation,
-        "function_explanation": function_names[:3],
-        "variable_explanation": variable_names[:5],
-        "data_flow": "Data moves from input through processing steps to the final output.",
-        "beginner_explanation": "This code likely performs a straightforward transformation of input data.",
-        "intermediate_explanation": "The solution is structured around a small set of operations and should be easy to extend.",
-        "senior_explanation": "The implementation is acceptable but would benefit from stronger validation and clearer decomposition.",
-        "complexity": {"time": complexity, "space": "O(1)"},
-        "bugs": bugs,
-        "improvements": improvements[:5],
-        "interview_questions": interview_questions,
-        "flowchart": flowchart,
-        "scores": {
-            "readability": 82,
-            "maintainability": 76,
-            "naming": 74,
-            "documentation": 68,
-            "overall": 75,
-        },
-    }
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(_build_prompt(payload))
+    text = getattr(response, "text", "") or ""
+
+    if not text:
+        raise RuntimeError("Gemini returned an empty response")
+
+    return _parse_gemini_response(text)
 
 
 def save_history(db: Session, user_id: int, payload: AnalysisRequest, result: Dict[str, Any]):

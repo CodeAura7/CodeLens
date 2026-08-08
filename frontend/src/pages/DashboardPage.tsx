@@ -1,9 +1,21 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 interface HistorySummary { id: number; filename: string; language: string; summary: string; created_at: string; }
+
+const supportedExtensions: Record<string, string> = {
+  py: 'python',
+  js: 'javascript',
+  ts: 'typescript',
+  java: 'java',
+  cpp: 'cpp',
+  c: 'c',
+  cs: 'csharp',
+  go: 'go',
+  php: 'php',
+};
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
@@ -12,6 +24,7 @@ export default function DashboardPage() {
   const [filename, setFilename] = useState('sample.py');
   const [language, setLanguage] = useState('python');
   const [content, setContent] = useState('def greet(name):\n    return f"Hello {name}"\n');
+  const [selectedFileName, setSelectedFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -26,6 +39,24 @@ export default function DashboardPage() {
     } catch {
       setHistory([]);
     }
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    const detectedLanguage = supportedExtensions[extension] || 'text';
+
+    setFilename(file.name);
+    setLanguage(detectedLanguage);
+    setSelectedFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setContent(typeof reader.result === 'string' ? reader.result : '');
+    };
+    reader.readAsText(file);
   };
 
   const handleAnalyze = async (e: FormEvent<HTMLFormElement>) => {
@@ -65,8 +96,9 @@ export default function DashboardPage() {
               <form onSubmit={handleAnalyze}>
                 <div className="row g-3">
                   <div className="col-md-6">
-                    <label className="form-label">Filename</label>
-                    <input className="form-control" value={filename} onChange={(e) => setFilename(e.target.value)} required />
+                    <label className="form-label">Upload source file</label>
+                    <input className="form-control" type="file" accept=".py,.js,.ts,.java,.cpp,.c,.cs,.go,.php" onChange={handleFileChange} required />
+                    {selectedFileName ? <div className="form-text text-info">Loaded: {selectedFileName}</div> : null}
                   </div>
                   <div className="col-md-6">
                     <label className="form-label">Language</label>
@@ -74,12 +106,21 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3">
-                  <label className="form-label">Code</label>
+                  <label className="form-label">Selected code</label>
                   <textarea className="form-control" rows={12} value={content} onChange={(e) => setContent(e.target.value)} required />
                 </div>
-                <div className="mt-3 d-flex align-items-center justify-content-between">
-                  <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? 'Analyzing...' : 'Analyze'}</button>
-                  {message ? <span className="text-info">{message}</span> : null}
+                <div className="mt-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <button className="btn btn-primary" type="submit" disabled={loading}>
+                    {loading ? (
+                      <span className="d-flex align-items-center gap-2">
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Analyzing with Gemini...
+                      </span>
+                    ) : (
+                      'Analyze'
+                    )}
+                  </button>
+                  {message ? <span className={message.includes('Unable') ? 'text-warning' : 'text-info'}>{message}</span> : null}
                 </div>
               </form>
             </div>

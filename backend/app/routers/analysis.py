@@ -32,7 +32,14 @@ def upload(payload: AnalysisRequest, credentials: HTTPAuthorizationCredentials =
     if not payload.content.strip():
         raise HTTPException(status_code=400, detail="Empty file")
 
-    result = build_analysis_payload(payload)
+    try:
+        result = build_analysis_payload(payload)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to analyze the file right now. Please verify the Gemini API key and try again.",
+        ) from exc
+
     save_history(db, user.id, payload, result)
     return {"message": "Analysis completed", "result": result}
 
@@ -56,7 +63,14 @@ def analyze(payload: AnalysisRequest, credentials: HTTPAuthorizationCredentials 
     if not payload.content.strip():
         raise HTTPException(status_code=400, detail="Empty file")
 
-    result = build_analysis_payload(payload)
+    try:
+        result = build_analysis_payload(payload)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to analyze the file right now. Please verify the Gemini API key and try again.",
+        ) from exc
+
     save_history(db, user.id, payload, result)
     return {"message": "Analysis completed", "result": result}
 
