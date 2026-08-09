@@ -72,8 +72,8 @@ def analyze(payload: AnalysisRequest, credentials: HTTPAuthorizationCredentials 
             detail="Unable to analyze the file right now. Please verify the Gemini API key and try again.",
         ) from exc
 
-    save_history(db, user.id, payload, result)
-    return {"message": "Analysis completed", "result": result}
+    record = save_history(db, user.id, payload, result)
+    return {"message": "Analysis completed", "result": result, "history_id": record.id}
 
 
 @router.get("/history", response_model=list[HistoryEntry])

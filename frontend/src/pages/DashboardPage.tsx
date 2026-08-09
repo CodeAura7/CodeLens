@@ -66,7 +66,11 @@ export default function DashboardPage() {
     try {
       const res = await api.post('/analyze', { filename, language, content });
       setMessage('Analysis ready');
-      navigate('/analyze', { state: { result: res.data.result, filename, language, content } });
+      if (res.data.history_id) {
+        navigate(`/analyze/${res.data.history_id}`);
+      } else {
+        navigate('/analyze', { state: { result: res.data.result, filename, language, content } });
+      }
     } catch (err: any) {
       setMessage(err.response?.data?.detail || 'Unable to analyze the file.');
     } finally {
@@ -149,7 +153,7 @@ export default function DashboardPage() {
           <div className="row g-3 mt-1">
             {history.length ? history.map((item) => (
               <div className="col-md-6 col-xl-3" key={item.id}>
-                <div className="card bg-black border-secondary rounded-4 h-100">
+                <div className="card bg-black border-secondary rounded-4 h-100 analysis-card" role="button" onClick={() => navigate(`/analyze/${item.id}`)}>
                   <div className="card-body">
                     <h6 className="fw-bold">{item.filename}</h6>
                     <p className="text-secondary small mb-2">{item.language}</p>
